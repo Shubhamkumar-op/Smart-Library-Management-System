@@ -27,10 +27,13 @@ def fetch_data(query, params=None):
 
     conn = get_connection()
 
+    if conn is None:
+        st.error("Database connection failed.")
+        return None
+
     try:
         with conn.cursor() as cur:
             cur.execute(query, params or ())
-
             rows = cur.fetchall()
             columns = [desc[0] for desc in cur.description]
 
@@ -44,15 +47,38 @@ def fetch_data(query, params=None):
         conn.close()
 
 
-def get_options(table, id_column, name_column):
+def get_or_create_id(cur, table, id_column, name_column, name):
 
-    return fetch_data(
+    name = name.strip()
+
+    if not name:
+        raise ValueError(f"{name_column} cannot be empty.")
+
+    cur.execute(
         f"""
-        SELECT {id_column}, {name_column}
+        SELECT {id_column}
         FROM library.{table}
-        ORDER BY {name_column}
-        """
+        WHERE LOWER(TRIM({name_column})) = LOWER(TRIM(%s))
+        LIMIT 1
+        """,
+        (name,)
     )
+
+    result = cur.fetchone()
+
+    if result:
+        return result[0]
+
+    cur.execute(
+        f"""
+        INSERT INTO library.{table} ({name_column})
+        VALUES (%s)
+        RETURNING {id_column}
+        """,
+        (name,)
+    )
+
+    return cur.fetchone()[0]
 
 
 # ==========================================
@@ -112,89 +138,98 @@ st.divider()
 
 st.subheader("➕ Add New Book")
 
-authors = get_options(
-    "authors",
-    "author_id",
-    "author_name"
-)
+with st.form("add_book_form"):
 
-categories = get_options(
-    "categories",
-    "category_id",
-    "category_name"
-)
+    title = st.text_input(
+        "Book Title",
+        placeholder="Enter book title"
+    )
 
-publishers = get_options(
-    "publishers",
-    "publisher_id",
-    "publisher_name"
-)
+    isbn = st.text_input(
+        "ISBN",
+        placeholder="Enter ISBN"
+    )
 
-if all(
-    df is not None and not df.empty
-    for df in [authors, categories, publishers]
-):
+    st.markdown("### Author Information")
 
-    with st.form("add_book_form"):
+    author = st.text_input(
+        "Author Name",
+        placeholder="Enter author name"
+    )
 
-        title = st.text_input("Book Title")
+    st.markdown("### Category Information")
 
-        isbn = st.text_input("ISBN")
+    category = st.text_input(
+        "Category Name",
+        placeholder="Enter category name"
+    )
 
-        author = st.selectbox(
-            "Author",
-            authors.to_dict("records"),
-            format_func=lambda x: x["author_name"]
-        )
+    st.markdown("### Publisher Information")
 
-        category = st.selectbox(
-            "Category",
-            categories.to_dict("records"),
-            format_func=lambda x: x["category_name"]
-        )
+    publisher = st.text_input(
+        "Publisher Name",
+        placeholder="Enter publisher name"
+    )
 
-        publisher = st.selectbox(
-            "Publisher",
-            publishers.to_dict("records"),
-            format_func=lambda x: x["publisher_name"]
-        )
+    st.markdown("### Additional Information")
 
-        publication_year = st.number_input(
-            "Publication Year",
-            min_value=1000,
-            max_value=2100,
-            value=2026
-        )
+    publication_year = st.number_input(
+        "Publication Year",
+        min_value=1000,
+        max_value=2100,
+        value=2026
+    )
 
-        edition = st.text_input("Edition")
+    edition = st.text_input(
+        "Edition",
+        placeholder="Enter edition"
+    )
 
-        language = st.text_input(
-            "Language",
-            value="English"
-        )
+    language = st.text_input(
+        "Language",
+        value="English"
+    )
 
-        number_of_copies = st.number_input(
-            "Number of Copies",
-            min_value=1,
-            max_value=100,
-            value=1
-        )
+    number_of_copies = st.number_input(
+        "Number of Copies",
+        min_value=1,
+        max_value=100,
+        value=1
+    )
 
-        submitted = st.form_submit_button(
-            "Add Book",
-            use_container_width=True
-        )
+    submitted = st.form_submit_button(
+        "Add Book",
+        use_container_width=True
+    )
 
-        if submitted:
+    if submitted:
 
-            if not title.strip() or not isbn.strip():
-                st.error("Title and ISBN are required.")
+        if not title.strip():
+            st.error("Book title is required.")
+
+        elif not isbn.strip():
+            st.error("ISBN is required.")
+
+        elif not author.strip():
+            st.error("Author name is required.")
+
+        elif not category.strip():
+            st.error("Category name is required.")
+
+        elif not publisher.strip():
+            st.error("Publisher name is required.")
+
+        else:
+
+            conn = get_connection()
+
+            if conn is None:
+                st.error("Database connection failed.")
 
             else:
 
-                conn = get_connection()
-
                 try:
+
                     with conn.cursor() as cur:
 
                         # Check duplicate ISBN
@@ -212,7 +247,37 @@ if all(
                                 "A book with this ISBN already exists."
                             )
 
-                        # Insert book
+                        # Create or reuse Author
+
+                        author_id = get_or_create_id(
+                            cur,
+                            "authors",
+                            "author_id",
+                            "author_name",
+                            author
+                        )
+
+                        # Create or reuse Category
+
+                        category_id = get_or_create_id(
+                            cur,
+                            "categories",
+                            "category_id",
+                            "category_name",
+                            category
+                        )
+
+                        # Create or reuse Publisher
+
+                        publisher_id = get_or_create_id(
+                            cur,
+                            "publishers",
+                            "publisher_id",
+                            "publisher_name",
+                            publisher
+                        )
+
+                        # Insert Book
 
                         cur.execute("""
                             INSERT INTO library.books
@@ -233,8 +298,8 @@ if all(
                         """, (
                             title.strip(),
                             isbn.strip(),
-                            category["category_id"],
-                            publisher["publisher_id"],
+                            category_id,
+                            publisher_id,
                             publication_year,
                             edition.strip() or None,
                             language.strip() or None
@@ -242,7 +307,7 @@ if all(
 
                         book_id = cur.fetchone()[0]
 
-                        # Insert author relationship
+                        # Insert Author Relationship
 
                         cur.execute("""
                             INSERT INTO library.book_authors
@@ -250,10 +315,10 @@ if all(
                             VALUES (%s, %s)
                         """, (
                             book_id,
-                            author["author_id"]
+                            author_id
                         ))
 
-                        # Insert book copies
+                        # Insert Book Copies
 
                         for i in range(number_of_copies):
 
@@ -287,13 +352,6 @@ if all(
 
                 finally:
                     conn.close()
-
-else:
-
-    st.warning(
-        "Please add authors, categories and publishers "
-        "before adding a book."
-    )
 
 
 st.divider()
@@ -416,90 +474,96 @@ if remove_data is not None and not remove_data.empty:
 
         conn = get_connection()
 
-        try:
-            with conn.cursor() as cur:
+        if conn is None:
+            st.error("Database connection failed.")
 
-                # Lock book record
+        else:
 
-                cur.execute("""
-                    SELECT book_id
-                    FROM library.books
-                    WHERE book_id = %s
-                    AND is_active = TRUE
-                    FOR UPDATE
-                """, (selected_book["book_id"],))
+            try:
 
-                book = cur.fetchone()
+                with conn.cursor() as cur:
 
-                if not book:
-
-                    st.error(
-                        "Book not found or already inactive."
-                    )
-
-                else:
-
-                    # Check issued copies
+                    # Lock Book Record
 
                     cur.execute("""
-                        SELECT COUNT(*)
-                        FROM library.book_copies
+                        SELECT book_id
+                        FROM library.books
                         WHERE book_id = %s
-                        AND status = 'issued'
+                        AND is_active = TRUE
+                        FOR UPDATE
                     """, (selected_book["book_id"],))
 
-                    issued = cur.fetchone()[0]
+                    book = cur.fetchone()
 
-                    # Check pending reservations
-
-                    cur.execute("""
-                        SELECT COUNT(*)
-                        FROM library.reservations
-                        WHERE book_id = %s
-                        AND status = 'pending'
-                    """, (selected_book["book_id"],))
-
-                    reservations = cur.fetchone()[0]
-
-                    if issued > 0:
+                    if not book:
 
                         st.error(
-                            "Cannot remove book. "
-                            "Some copies are currently issued."
-                        )
-
-                    elif reservations > 0:
-
-                        st.error(
-                            "Cannot remove book. "
-                            "Active reservations exist."
+                            "Book not found or already inactive."
                         )
 
                     else:
 
-                        # Soft delete
+                        # Check Issued Copies
 
                         cur.execute("""
-                            UPDATE library.books
-                            SET is_active = FALSE
+                            SELECT COUNT(*)
+                            FROM library.book_copies
                             WHERE book_id = %s
+                            AND status = 'issued'
                         """, (selected_book["book_id"],))
 
-                        conn.commit()
+                        issued = cur.fetchone()[0]
 
-                        st.success(
-                            "Book removed from active inventory!"
-                        )
+                        # Check Pending Reservations
 
-                        st.rerun()
+                        cur.execute("""
+                            SELECT COUNT(*)
+                            FROM library.reservations
+                            WHERE book_id = %s
+                            AND status = 'pending'
+                        """, (selected_book["book_id"],))
 
-        except Exception as e:
+                        reservations = cur.fetchone()[0]
 
-            conn.rollback()
-            st.error(f"Unable to remove book: {e}")
+                        if issued > 0:
 
-        finally:
-            conn.close()
+                            st.error(
+                                "Cannot remove book. "
+                                "Some copies are currently issued."
+                            )
+
+                        elif reservations > 0:
+
+                            st.error(
+                                "Cannot remove book. "
+                                "Active reservations exist."
+                            )
+
+                        else:
+
+                            # Soft Delete
+
+                            cur.execute("""
+                                UPDATE library.books
+                                SET is_active = FALSE
+                                WHERE book_id = %s
+                            """, (selected_book["book_id"],))
+
+                            conn.commit()
+
+                            st.success(
+                                "Book removed from active inventory!"
+                            )
+
+                            st.rerun()
+
+            except Exception as e:
+
+                conn.rollback()
+                st.error(f"Unable to remove book: {e}")
+
+            finally:
+                conn.close()
 
 else:
 

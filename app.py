@@ -7,10 +7,6 @@ from database.connection import get_connection
 from utils.helpers import require_login
 
 
-# ==========================================
-# PAGE CONFIGURATION
-# ==========================================
-
 st.set_page_config(
     page_title="Smart Library Management System",
     page_icon="📚",
@@ -19,16 +15,67 @@ st.set_page_config(
 )
 
 
-# ==========================================
-# LOGIN PROTECTION
-# ==========================================
+st.markdown("""
+<style>
+    .stApp {
+        background-color: #0e1117;
+        color: #ffffff;
+    }
+
+    [data-testid="stSidebar"] {
+        background-color: #0e1117;
+    }
+
+    [data-testid="stSidebar"] * {
+        color: #ffffff;
+    }
+
+    .block-container {
+        padding-top: 2rem;
+        padding-bottom: 2rem;
+    }
+
+    [data-testid="stMetric"] {
+        background-color: #1c212b;
+        padding: 18px;
+        border-radius: 10px;
+        border: 1px solid #303641;
+    }
+
+    [data-testid="stMetricLabel"] {
+        color: #c5cbd5;
+    }
+
+    [data-testid="stMetricValue"] {
+        color: #ffffff;
+    }
+
+    h1, h2, h3 {
+        color: #ffffff !important;
+    }
+
+    p, label {
+        color: #d0d4dc;
+    }
+
+    [data-testid="stDataFrame"] {
+        border: 1px solid #303641;
+        border-radius: 8px;
+    }
+
+    div.stButton > button {
+        border-radius: 7px;
+    }
+
+    hr {
+        border-color: #303641;
+    }
+</style>
+""", unsafe_allow_html=True)
+
 
 require_login()
 
-
-# ==========================================
-# DATABASE FUNCTION
-# ==========================================
 
 def fetch_data(query, params=None):
 
@@ -61,14 +108,10 @@ def get_count(result):
     return 0
 
 
-# ==========================================
-# SIDEBAR
-# ==========================================
-
 with st.sidebar:
 
     st.title("📚 Smart Library")
-    st.caption("Management System")
+    st.caption("Library Management System")
 
     st.divider()
 
@@ -76,45 +119,47 @@ with st.sidebar:
 
     st.success("Database Connected")
 
-    st.info(
-        f"Logged in as: {user.get('username', st.session_state.get('username', 'User'))}"
+    st.write(
+        "**User:**",
+        user.get(
+            "username",
+            st.session_state.get("username", "User")
+        )
     )
 
-    st.caption(
-        f"Role: {user.get('role', st.session_state.get('role', 'Unknown'))}"
+    st.write(
+        "**Role:**",
+        user.get(
+            "role",
+            st.session_state.get("role", "Unknown")
+        )
     )
 
     st.divider()
 
-    st.markdown("### M.Tech DBMS Project")
-    st.caption("PostgreSQL + Python + Streamlit")
+    st.caption("Manage books, members and library records.")
 
 
-# ==========================================
-# MAIN DASHBOARD
-# ==========================================
-
-st.title("📚 Library Management Dashboard")
+st.title("📚 Library Dashboard")
 
 st.caption(
-    "Monitor books, members, circulation and library performance."
+    "Here's an overview of the library's current activity."
 )
+
 
 if st.button("🔄 Refresh Dashboard"):
     st.rerun()
 
+
 st.divider()
 
-
-# ==========================================
-# DASHBOARD METRICS
-# ==========================================
 
 total_books = fetch_data("""
     SELECT COUNT(*)
     FROM library.books
     WHERE is_active = TRUE
 """)
+
 
 total_copies = fetch_data("""
     SELECT COUNT(*)
@@ -123,6 +168,7 @@ total_copies = fetch_data("""
         ON bc.book_id = b.book_id
     WHERE b.is_active = TRUE
 """)
+
 
 available_copies = fetch_data("""
     SELECT COUNT(*)
@@ -133,11 +179,13 @@ available_copies = fetch_data("""
     AND b.is_active = TRUE
 """)
 
+
 active_members = fetch_data("""
     SELECT COUNT(*)
     FROM library.members
     WHERE membership_status = 'active'
 """)
+
 
 active_issues = fetch_data("""
     SELECT COUNT(*)
@@ -149,6 +197,7 @@ active_issues = fetch_data("""
     WHERE i.status = 'issued'
     AND b.is_active = TRUE
 """)
+
 
 overdue_books = fetch_data("""
     SELECT COUNT(*)
@@ -163,11 +212,8 @@ overdue_books = fetch_data("""
 """)
 
 
-# ==========================================
-# METRIC CARDS
-# ==========================================
+st.subheader("Library Overview")
 
-st.subheader("📊 Library Overview")
 
 c1, c2, c3 = st.columns(3)
 
@@ -186,6 +232,7 @@ c3.metric(
     get_count(active_members)
 )
 
+
 c4, c5, c6 = st.columns(3)
 
 c4.metric(
@@ -203,35 +250,29 @@ c6.metric(
     get_count(overdue_books)
 )
 
+
 st.divider()
 
 
-# ==========================================
-# BOOK INVENTORY BY CATEGORY
-# ==========================================
+st.subheader("Book Inventory by Category")
 
-st.subheader("📊 Book Inventory by Category")
 
 category_data = fetch_data("""
     SELECT
         cat.category_name,
         COUNT(bc.copy_id) AS total_copies
-
     FROM library.categories cat
-
     LEFT JOIN library.books b
         ON cat.category_id = b.category_id
         AND b.is_active = TRUE
-
     LEFT JOIN library.book_copies bc
         ON b.book_id = bc.book_id
-
     GROUP BY
         cat.category_id,
         cat.category_name
-
     ORDER BY total_copies DESC
 """)
+
 
 if category_data:
 
@@ -244,14 +285,22 @@ if category_data:
         df_category,
         x="Category",
         y="Total Copies",
-        title="Physical Copies Across Categories",
         text="Total Copies"
     )
 
     fig.update_layout(
         template="plotly_dark",
-        xaxis_title="Book Category",
-        yaxis_title="Number of Copies"
+        paper_bgcolor="#0e1117",
+        plot_bgcolor="#0e1117",
+        font_color="#ffffff",
+        xaxis_title="Category",
+        yaxis_title="Number of Copies",
+        margin=dict(
+            l=20,
+            r=20,
+            t=30,
+            b=20
+        )
     )
 
     st.plotly_chart(
@@ -263,14 +312,12 @@ else:
 
     st.info("No category inventory data available.")
 
+
 st.divider()
 
 
-# ==========================================
-# RECENT BOOKS ADDED
-# ==========================================
+st.subheader("Recently Added Books")
 
-st.subheader("🆕 Recently Added Books")
 
 recent_books = fetch_data("""
     SELECT
@@ -279,15 +326,12 @@ recent_books = fetch_data("""
         isbn,
         publication_year,
         created_at
-
     FROM library.books
-
     WHERE is_active = TRUE
-
     ORDER BY created_at DESC, book_id DESC
-
     LIMIT 5
 """)
+
 
 if recent_books:
 
@@ -312,14 +356,12 @@ else:
 
     st.info("No recent books available.")
 
+
 st.divider()
 
 
-# ==========================================
-# RECENT ISSUE TRANSACTIONS
-# ==========================================
+st.subheader("Recent Issue Transactions")
 
-st.subheader("📖 Recent Issue Transactions")
 
 recent_issues = fetch_data("""
     SELECT
@@ -329,22 +371,17 @@ recent_issues = fetch_data("""
         i.issue_date,
         i.due_date,
         i.status
-
     FROM library.issue_records i
-
     JOIN library.book_copies bc
         ON i.copy_id = bc.copy_id
-
     JOIN library.books b
         ON bc.book_id = b.book_id
-
     JOIN library.members m
         ON i.member_id = m.member_id
-
     ORDER BY i.issue_id DESC
-
     LIMIT 10
 """)
+
 
 if recent_issues:
 
@@ -370,19 +407,14 @@ else:
 
     st.info("No issue transactions available.")
 
+
 st.divider()
 
 
-# ==========================================
-# FOOTER
-# ==========================================
-
 st.markdown(
     """
-    <div style="text-align:center; padding:20px;">
-        <h4>📚 Smart Library Management System</h4>
-        <p>M.Tech DBMS Project | PostgreSQL Database</p>
-        <p>Developed using Python and Streamlit</p>
+    <div style="text-align:center; padding:15px; color:gray;">
+        📚 Smart Library Management System
     </div>
     """,
     unsafe_allow_html=True

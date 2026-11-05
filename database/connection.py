@@ -6,42 +6,42 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-# Application roles and their PostgreSQL roles
 ROLE_MAPPING = {
     "admin": "library_admin",
     "librarian": "library_librarian"
 }
 
 
-# ==========================================
-# AUTHENTICATION CONNECTION
-# ==========================================
+def get_db_setting(key):
+
+    try:
+        value = st.secrets.get(key)
+        if value:
+            return value
+    except Exception:
+        pass
+
+    return os.getenv(key)
+
 
 def get_auth_connection():
-    """
-    Used only for login verification.
-    Connects as library_app.
-    """
 
     return psycopg.connect(
-        host=os.getenv("DB_HOST"),
-        port=os.getenv("DB_PORT"),
-        dbname=os.getenv("DB_NAME"),
-        user=os.getenv("DB_USER"),
-        password=os.getenv("DB_PASSWORD"),
+        host=get_db_setting("DB_HOST"),
+        port=get_db_setting("DB_PORT"),
+        dbname=get_db_setting("DB_NAME"),
+        user=get_db_setting("DB_USER"),
+        password=get_db_setting("DB_PASSWORD"),
         options="-c search_path=library,public"
     )
 
-
-# ==========================================
-# ROLE-BASED DATABASE CONNECTION
-# ==========================================
 
 def get_connection():
 
     conn = None
 
     try:
+
         user = st.session_state.get("user")
 
         if not user:
@@ -55,15 +55,14 @@ def get_connection():
             raise ValueError("Invalid application role.")
 
         conn = psycopg.connect(
-            host=os.getenv("DB_HOST"),
-            port=os.getenv("DB_PORT"),
-            dbname=os.getenv("DB_NAME"),
-            user=os.getenv("DB_USER"),
-            password=os.getenv("DB_PASSWORD"),
+            host=get_db_setting("DB_HOST"),
+            port=get_db_setting("DB_PORT"),
+            dbname=get_db_setting("DB_NAME"),
+            user=get_db_setting("DB_USER"),
+            password=get_db_setting("DB_PASSWORD"),
             options="-c search_path=library,public"
         )
 
-        # Activate the appropriate PostgreSQL role
         with conn.cursor() as cur:
             cur.execute(f"SET ROLE {db_role}")
 
@@ -75,34 +74,4 @@ def get_connection():
             conn.close()
 
         print("Database connection error:", e)
-
         return None
-
-
-# ==========================================
-# TEST CONNECTION
-# ==========================================
-
-def test_connection():
-
-    conn = get_auth_connection()
-
-    try:
-        with conn.cursor() as cur:
-
-            cur.execute("""
-                SELECT
-                    current_database(),
-                    current_user,
-                    session_user;
-            """)
-
-            print("Authentication connection successful!")
-            print(cur.fetchone())
-
-    finally:
-        conn.close()
-
-
-if __name__ == "__main__":
-    test_connection()
